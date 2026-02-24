@@ -58,6 +58,7 @@ export const api = {
       path: '/api/transactions' as const,
       input: insertTransactionSchema.extend({
         amount: z.coerce.string(),
+        less: z.coerce.string().optional(),
         categoryId: z.coerce.number().optional(),
         date: z.coerce.date().optional()
       }),
@@ -72,6 +73,7 @@ export const api = {
       path: '/api/transactions/:id' as const,
       input: insertTransactionSchema.partial().extend({
         amount: z.coerce.string().optional(),
+        less: z.coerce.string().optional(),
         categoryId: z.coerce.number().optional(),
         date: z.coerce.date().optional()
       }),

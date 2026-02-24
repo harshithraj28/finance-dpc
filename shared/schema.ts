@@ -17,7 +17,10 @@ export const categories = pgTable("categories", {
 export const transactions = pgTable("transactions", {
   id: serial("id").primaryKey(),
   userId: text("user_id").notNull().references(() => users.id),
+  code: text("code"),
+  name: text("name"),
   amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+  less: numeric("less", { precision: 12, scale: 2 }).default("0"),
   type: text("type").notNull(), // 'debit' or 'credit'
   categoryId: integer("category_id").references(() => categories.id),
   notes: text("notes"),

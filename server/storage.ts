@@ -83,6 +83,7 @@ export class DatabaseStorage implements IStorage {
     const userTxs = await db.select().from(transactions).where(eq(transactions.userId, userId));
     let totalCredit = 0;
     let totalDebit = 0;
+    let totalLess = 0;
     let todayCredit = 0;
     let todayDebit = 0;
 
@@ -91,6 +92,7 @@ export class DatabaseStorage implements IStorage {
 
     userTxs.forEach(tx => {
       const amount = parseFloat(tx.amount.toString());
+      const less = parseFloat(tx.less?.toString() || "0");
       if (tx.type === 'credit') {
         totalCredit += amount;
         if (new Date(tx.date) >= today) todayCredit += amount;
@@ -98,12 +100,14 @@ export class DatabaseStorage implements IStorage {
         totalDebit += amount;
         if (new Date(tx.date) >= today) todayDebit += amount;
       }
+      totalLess += less;
     });
 
     return {
       totalCredit,
       totalDebit,
-      outstandingBalance: totalCredit - totalDebit,
+      totalLess,
+      outstandingBalance: totalCredit - totalDebit - totalLess,
       todaySummary: {
         credit: todayCredit,
         debit: todayDebit
