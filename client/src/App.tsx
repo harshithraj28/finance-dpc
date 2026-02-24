@@ -12,7 +12,7 @@ import { Loader2 } from "lucide-react";
 
 // Pages
 import Landing from "@/pages/Landing";
-import Dashboard from "@/pages/Dashboard";
+import Dashboard from "@/pages/RetroDashboard";
 import Transactions from "@/pages/Transactions";
 import Reports from "@/pages/Reports";
 
