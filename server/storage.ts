@@ -1,117 +1,121 @@
-import { 
-  categories, transactions, dailyReports,
-  type Category, type InsertCategory,
-  type Transaction, type InsertTransaction,
-  type DailyReport, type InsertDailyReport,
-  type CreateTransactionRequest,
-  type UpdateTransactionRequest
-} from "@shared/schema";
+import { accounts, transactions, type Account, type InsertAccount, type Transaction, type InsertTransaction } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, gte, lte, desc } from "drizzle-orm";
+import { eq, desc, and, gte, lt, sql } from "drizzle-orm";
 
 export interface IStorage {
-  getCategories(userId: string): Promise<Category[]>;
-  createCategory(userId: string, category: InsertCategory): Promise<Category>;
-  
-  getTransactions(userId: string, filters?: { type?: string, startDate?: string, endDate?: string, categoryId?: number }): Promise<(Transaction & { category?: Category })[]>;
-  createTransaction(userId: string, transaction: InsertTransaction): Promise<Transaction>;
-  updateTransaction(id: number, userId: string, updates: UpdateTransactionRequest): Promise<Transaction | undefined>;
-  deleteTransaction(id: number, userId: string): Promise<boolean>;
+  searchAccounts(query: string): Promise<Account[]>;
+  getAccountByCode(code: string): Promise<Account | undefined>;
+  createAccount(data: InsertAccount): Promise<Account>;
 
-  getDailyReports(userId: string): Promise<DailyReport[]>;
-  getDashboardSummary(userId: string): Promise<{
+  getTodayTransactions(): Promise<Transaction[]>;
+  createTransaction(data: InsertTransaction): Promise<Transaction>;
+
+  getDashboardSummary(): Promise<{
     totalCredit: number;
     totalDebit: number;
-    outstandingBalance: number;
-    todaySummary: { credit: number; debit: number; };
+    outstanding: number;
   }>;
 }
 
 export class DatabaseStorage implements IStorage {
-  async getCategories(userId: string): Promise<Category[]> {
-    return await db.select().from(categories).where(eq(categories.userId, userId));
+
+  // 🔎 Search by name OR code
+  async searchAccounts(query: string): Promise<Account[]> {
+    return await db
+      .select()
+      .from(accounts)
+      .where(
+        sql`lower(${accounts.name}) like ${'%' + query.toLowerCase() + '%'}
+        OR lower(${accounts.code}) like ${'%' + query.toLowerCase() + '%'}`
+      )
+      .orderBy(accounts.name);
   }
 
-  async createCategory(userId: string, category: InsertCategory): Promise<Category> {
-    const [newCategory] = await db.insert(categories).values({ ...category, userId }).returning();
-    return newCategory;
+  async getAccountByCode(code: string): Promise<Account | undefined> {
+    const result = await db
+      .select()
+      .from(accounts)
+      .where(eq(accounts.code, code));
+
+    return result[0];
   }
 
-  async getTransactions(userId: string, filters?: { type?: string, startDate?: string, endDate?: string, categoryId?: number }): Promise<(Transaction & { category?: Category })[]> {
-    let query = db.query.transactions.findMany({
-      where: (t, { eq, and, gte, lte }) => {
-        const conditions = [eq(t.userId, userId)];
-        if (filters?.type) conditions.push(eq(t.type, filters.type));
-        if (filters?.categoryId) conditions.push(eq(t.categoryId, filters.categoryId));
-        if (filters?.startDate) conditions.push(gte(t.date, new Date(filters.startDate)));
-        if (filters?.endDate) conditions.push(lte(t.date, new Date(filters.endDate)));
-        return and(...conditions);
-      },
-      with: {
-        category: true
-      },
-      orderBy: (t, { desc }) => [desc(t.date)]
-    });
-    return await query;
+  async createAccount(data: InsertAccount): Promise<Account> {
+    const [account] = await db.insert(accounts).values(data).returning();
+    return account;
   }
 
-  async createTransaction(userId: string, transaction: InsertTransaction): Promise<Transaction> {
-    const [newTx] = await db.insert(transactions).values({ ...transaction, userId }).returning();
-    return newTx;
+  // 📅 Get today's transactions only
+  async getTodayTransactions(): Promise<Transaction[]> {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const tomorrow = new Date(today);
+    tomorrow.setDate(today.getDate() + 1);
+
+    return await db
+      .select()
+      .from(transactions)
+      .where(
+        and(
+          gte(transactions.date, today),
+          lt(transactions.date, tomorrow)
+        )
+      )
+      .orderBy(desc(transactions.serial));
   }
 
-  async updateTransaction(id: number, userId: string, updates: UpdateTransactionRequest): Promise<Transaction | undefined> {
-    const [updated] = await db.update(transactions)
-      .set(updates)
-      .where(and(eq(transactions.id, id), eq(transactions.userId, userId)))
-      .returning();
-    return updated;
-  }
-
-  async deleteTransaction(id: number, userId: string): Promise<boolean> {
-    const [deleted] = await db.delete(transactions)
-      .where(and(eq(transactions.id, id), eq(transactions.userId, userId)))
-      .returning();
-    return !!deleted;
-  }
-
-  async getDailyReports(userId: string): Promise<DailyReport[]> {
-    return await db.select().from(dailyReports).where(eq(dailyReports.userId, userId)).orderBy(desc(dailyReports.reportDate));
-  }
-
-  async getDashboardSummary(userId: string) {
-    const userTxs = await db.select().from(transactions).where(eq(transactions.userId, userId));
-    let totalCredit = 0;
-    let totalDebit = 0;
-    let totalLess = 0;
-    let todayCredit = 0;
-    let todayDebit = 0;
+  // 🔢 Auto daily serial + create transaction
+  async createTransaction(data: InsertTransaction): Promise<Transaction> {
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    userTxs.forEach(tx => {
+    const tomorrow = new Date(today);
+    tomorrow.setDate(today.getDate() + 1);
+
+    const todayTxs = await db
+      .select()
+      .from(transactions)
+      .where(
+        and(
+          gte(transactions.date, today),
+          lt(transactions.date, tomorrow)
+        )
+      );
+
+    const nextSerial = todayTxs.length + 1;
+
+    const [tx] = await db
+      .insert(transactions)
+      .values({
+        ...data,
+        serial: nextSerial,
+        date: new Date()
+      })
+      .returning();
+
+    return tx;
+  }
+
+  // 📊 Dashboard Summary
+  async getDashboardSummary() {
+
+    const allTxs = await db.select().from(transactions);
+
+    let totalCredit = 0;
+    let totalDebit = 0;
+
+    allTxs.forEach(tx => {
       const amount = parseFloat(tx.amount.toString());
-      const less = parseFloat(tx.less?.toString() || "0");
-      if (tx.type === 'credit') {
-        totalCredit += amount;
-        if (new Date(tx.date) >= today) todayCredit += amount;
-      } else {
-        totalDebit += amount;
-        if (new Date(tx.date) >= today) todayDebit += amount;
-      }
-      totalLess += less;
+      if (tx.type === "credit") totalCredit += amount;
+      else totalDebit += amount;
     });
 
     return {
       totalCredit,
       totalDebit,
-      totalLess,
-      outstandingBalance: totalCredit - totalDebit - totalLess,
-      todaySummary: {
-        credit: todayCredit,
-        debit: todayDebit
-      }
+      outstanding: totalDebit - totalCredit
     };
   }
 }
