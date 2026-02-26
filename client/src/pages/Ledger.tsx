@@ -127,10 +127,10 @@ export default function Ledger() {
     setEditingId(tx.id);
     setSelectedAccount({
       id: tx.accountId,
-      name: tx.name,
+      name: tx.name || "",
       code: ""
     });
-    setSearch(tx.name);
+    setSearch(tx.name || "");
     setAmount(tx.amount);
     setType(tx.type);
     setDetail(tx.detail || "");
@@ -140,9 +140,11 @@ export default function Ledger() {
     if (!window.confirm("Delete this transaction?")) return;
 
     try {
-      await fetch(`/api/transactions/${id}`, {
+      const res = await fetch(`/api/transactions/${id}`, {
         method: "DELETE"
       });
+
+      if (!res.ok) throw new Error("Delete failed");
 
       loadTransactions();
       loadDashboard();

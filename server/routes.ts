@@ -73,7 +73,7 @@ export async function registerRoutes(
         JOIN accounts a ON t.account_id = a.id
         WHERE t.date >= CURRENT_DATE
         AND t.date < CURRENT_DATE + INTERVAL '1 day'
-        ORDER BY t.id ASC
+        ORDER BY t.id DESC
       `);
 
       res.json(result.rows || []);
