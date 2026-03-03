@@ -1,6 +1,6 @@
 import { accounts, transactions, type Account, type InsertAccount, type Transaction, type InsertTransaction } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, gte, lt, sql } from "drizzle-orm";
+import { eq, desc, and, gte, lt,lte, sql } from "drizzle-orm";
 
 export interface IStorage {
   searchAccounts(query: string): Promise<Account[]>;
@@ -65,6 +65,26 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(transactions.serial));
   }
 
+  async getOutstandingTillDate(selectedDate: string) {
+    const result = await db.execute(`
+      SELECT 
+        a.id,
+        a.name,
+        MAX(t.date) as "lastDate",
+        COALESCE(SUM(CASE WHEN t.type = 'debit' THEN t.amount END),0) 
+        -
+        COALESCE(SUM(CASE WHEN t.type = 'credit' THEN t.amount END),0) 
+        as balance
+      FROM accounts a
+      LEFT JOIN transactions t 
+        ON a.id = t.account_id
+        AND DATE(t.date) <= '${selectedDate}'
+      GROUP BY a.id, a.name
+      ORDER BY a.name ASC
+    `);
+
+    return result.rows;
+  }
   // 🔢 Auto daily serial + create transaction
   async createTransaction(data: InsertTransaction): Promise<Transaction> {
 
